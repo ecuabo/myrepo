@@ -1,0 +1,335 @@
+-- =============================================
+-- Neovim Configuration v1.1
+-- Optimized for stability and productivity
+-- =============================================
+
+-- Ensure UTF-8 encoding
+vim.opt.encoding = "utf-8"
+vim.opt.fileencoding = "utf-8"
+
+-- Leader keys (must be set before any keymaps)
+vim.g.mapleader = " "
+vim.g.maplocalleader = "\\"
+
+-- =============================================
+-- Plugin Management with Lazy.nvim
+-- =============================================
+
+local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+
+-- Safety check for git installation
+if vim.fn.executable("git") == 0 then
+  vim.notify("Git is required for plugin management!", vim.log.levels.ERROR)
+  return
+end
+
+-- Install Lazy.nvim if missing
+if not vim.loop.fs_stat(lazypath) then
+  local clone_cmd = {
+    "git", "clone",
+    "--filter=blob:none",
+    "--branch=stable",
+    "https://github.com/folke/lazy.nvim.git",
+    lazypath
+  }
+  
+  local success, msg = pcall(vim.fn.system, clone_cmd)
+  if not success then
+    vim.notify("Failed to install Lazy.nvim: " .. msg, vim.log.levels.ERROR)
+    return
+  end
+end
+
+vim.opt.rtp:prepend(lazypath)
+
+-- =============================================
+-- Plugin Configuration
+-- =============================================
+
+require("lazy").setup({
+  -- Core UI Improvements
+  {
+    "nvim-lualine/lualine.nvim",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
+    config = function()
+      require("lualine").setup({
+        options = { theme = "auto" }
+      })
+    end
+  },
+
+  -- LSP Infrastructure
+  {
+    "neovim/nvim-lspconfig",
+    dependencies = {
+      { "williamboman/mason.nvim", build = ":MasonUpdate" },
+      "williamboman/mason-lspconfig.nvim",
+      "hrsh7th/cmp-nvim-lsp",
+    },
+    config = function()
+      require("mason").setup({ ui = { border = "rounded" } })
+      require("mason-lspconfig").setup({
+        automatic_installation = true,
+        ensure_installed = {
+          "pyright", "tsserver", "lua_ls", "jsonls", "html", "cssls"
+        }
+      })
+      local capabilities = require("cmp_nvim_lsp").default_capabilities()
+      local on_attach = function(client, bufnr)
+        vim.api.nvim_buf_set_option(bufnr, "omnifunc", "v:lua.vim.lsp.omnifunc")
+        local bufopts = { noremap=true, silent=true, buffer=bufnr }
+        vim.keymap.set("n", "gd", vim.lsp.buf.definition, bufopts)
+        vim.keymap.set("n", "K", vim.lsp.buf.hover, bufopts)
+        vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, bufopts)
+        vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, bufopts)
+      end
+      local lsp = require("lspconfig")
+      lsp.pyright.setup({ capabilities = capabilities, on_attach = on_attach })
+      lsp.tsserver.setup({ capabilities = capabilities, on_attach = on_attach })
+      lsp.lua_ls.setup({
+        capabilities = capabilities,
+        on_attach = on_attach,
+        settings = {
+          Lua = {
+            runtime = { version = "LuaJIT" },
+            diagnostics = { globals = { "vim" } },
+            workspace = { library = vim.api.nvim_get_runtime_file("", true) },
+            telemetry = { enable = false }
+          }
+        }
+      })
+    end
+  },
+
+  -- Fuzzy Finder
+  {
+    "nvim-telescope/telescope.nvim",
+    version = "0.1.x",
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      { "nvim-telescope/telescope-fzf-native.nvim", build = "make" }
+    },
+    config = function()
+      require("telescope").setup({
+        defaults = {
+          mappings = {
+            i = {
+              ["<C-u>"] = false,
+              ["<C-d>"] = false
+            }
+          }
+        },
+        pickers = {
+          find_files = {
+            hidden = true
+          }
+        }
+      })
+      require("telescope").load_extension("fzf")
+      local builtin = require("telescope.builtin")
+      vim.keymap.set("n", "<leader>ff", builtin.find_files, { desc = "Find Files" })
+      vim.keymap.set("n", "<leader>fg", builtin.live_grep, { desc = "Live Grep" })
+      vim.keymap.set("n", "<leader>fb", builtin.buffers, { desc = "Find Buffers" })
+      vim.keymap.set("n", "<leader>fh", builtin.help_tags, { desc = "Help Tags" })
+      -- Show all files including hidden
+      vim.keymap.set("n", "<leader>fa", function()
+        builtin.find_files({ hidden = true, no_ignore = true })
+      end, { desc = "Find All Files (incl. hidden)" })
+    end
+  },
+
+  -- Syntax Highlighting
+  {
+    "nvim-treesitter/nvim-treesitter",
+    build = ":TSUpdate",
+    config = function()
+      require("nvim-treesitter.configs").setup({
+        ensure_installed = {
+          "python", "javascript", "typescript", "lua", "vim", "vimdoc",
+          "html", "css", "json", "markdown", "bash"
+        },
+        highlight = { enable = true },
+        indent = { enable = true },
+        incremental_selection = {
+          enable = true,
+          keymaps = {
+            init_selection = "<c-space>",
+            node_incremental = "<c-space>",
+            scope_incremental = "<c-s>",
+            node_decremental = "<M-space>",
+          },
+        },
+      })
+    end
+  },
+
+  -- Autocompletion
+  {
+    "hrsh7th/nvim-cmp",
+    dependencies = {
+      "hrsh7th/cmp-buffer",
+      "hrsh7th/cmp-path",
+      "hrsh7th/cmp-nvim-lsp",
+      "L3MON4D3/LuaSnip",
+      "saadparwaiz1/cmp_luasnip",
+    },
+    config = function()
+      local cmp = require("cmp")
+      local luasnip = require("luasnip")
+      cmp.setup({
+        snippet = {
+          expand = function(args)
+            luasnip.lsp_expand(args.body)
+          end,
+        },
+        mapping = cmp.mapping.preset.insert({
+          ["<C-d>"] = cmp.mapping.scroll_docs(-4),
+          ["<C-f>"] = cmp.mapping.scroll_docs(4),
+          ["<C-Space>"] = cmp.mapping.complete(),
+          ["<CR>"] = cmp.mapping.confirm({
+            behavior = cmp.ConfirmBehavior.Replace,
+            select = true,
+          }),
+          ["<Tab>"] = cmp.mapping(function(fallback)
+            if cmp.visible() then
+              cmp.select_next_item()
+            elseif luasnip.expand_or_jumpable() then
+              luasnip.expand_or_jump()
+            else
+              fallback()
+            end
+          end, { "i", "s" }),
+          ["<S-Tab>"] = cmp.mapping(function(fallback)
+            if cmp.visible() then
+              cmp.select_prev_item()
+            elseif luasnip.jumpable(-1) then
+              luasnip.jump(-1)
+            else
+              fallback()
+            end
+          end, { "i", "s" }),
+        }),
+        sources = {
+          { name = "nvim_lsp" },
+          { name = "luasnip" },
+          { name = "buffer" },
+          { name = "path" },
+        },
+      })
+    end
+  },
+
+  -- Git Integration: Gitsigns
+  {
+    "lewis6991/gitsigns.nvim",
+    config = function()
+      require("gitsigns").setup()
+    end
+  }
+})
+
+-- =============================================
+-- Editor Settings
+-- =============================================
+
+-- UI Config
+vim.opt.number = true              -- Show line numbers
+vim.opt.relativenumber = true      -- Relative line numbers
+vim.opt.cursorline = true          -- Highlight current line
+vim.opt.signcolumn = "yes"         -- Always show sign column
+vim.opt.colorcolumn = "80"         -- Line length marker
+vim.opt.scrolloff = 8              -- Keep 8 lines above/below cursor
+vim.opt.sidescrolloff = 8          -- Keep 8 columns left/right of cursor
+
+-- Indentation
+vim.opt.tabstop = 2                -- Number of spaces a tab counts for
+vim.opt.softtabstop = 2            -- Number of spaces for tab/backspace
+vim.opt.shiftwidth = 2             -- Number of spaces for autoindent
+vim.opt.expandtab = true           -- Use spaces instead of tabs
+vim.opt.smartindent = true         -- Smart autoindenting
+vim.opt.breakindent = true         -- Maintain indent for wrapped lines
+
+-- Search
+vim.opt.ignorecase = true          -- Case insensitive search
+vim.opt.smartcase = true           -- Case sensitive when uppercase present
+vim.opt.hlsearch = true            -- Highlight search matches
+vim.opt.incsearch = true           -- Show matches while typing
+
+-- Performance
+vim.opt.lazyredraw = true          -- Don't redraw during macros
+vim.opt.updatetime = 250           -- Faster completion (default 4000ms)
+vim.opt.timeoutlen = 500           -- Time to wait for mapped sequence
+
+-- Clipboard
+vim.opt.clipboard = "unnamedplus"  -- Use system clipboard
+
+-- File Handling
+vim.opt.swapfile = false           -- Don't use swap files
+vim.opt.backup = false             -- Don't keep backups
+vim.opt.undofile = true            -- Persistent undo history
+vim.opt.autoread = true            -- Auto-reload changed files
+
+-- Window Management
+vim.opt.splitright = true          -- Vertical splits to the right
+vim.opt.splitbelow = true          -- Horizontal splits below
+
+-- =============================================
+-- Key Mappings
+-- =============================================
+
+-- Better window navigation
+vim.keymap.set("n", "<C-h>", "<C-w>h")
+vim.keymap.set("n", "<C-j>", "<C-w>j")
+vim.keymap.set("n", "<C-k>", "<C-w>k")
+vim.keymap.set("n", "<C-l>", "<C-w>l")
+
+-- Resize windows with arrow keys
+vim.keymap.set("n", "<Up>", ":resize +2<CR>")
+vim.keymap.set("n", "<Down>", ":resize -2<CR>")
+vim.keymap.set("n", "<Left>", ":vertical resize -2<CR>")
+vim.keymap.set("n", "<Right>", ":vertical resize +2<CR>")
+
+-- Quick save and quit
+vim.keymap.set("n", "<leader>w", ":w<CR>")
+vim.keymap.set("n", "<leader>q", ":q<CR>")
+
+-- Clear search highlights
+vim.keymap.set("n", "<leader>h", ":nohlsearch<CR>")
+
+-- Buffer navigation
+vim.keymap.set("n", "<leader>bn", ":bnext<CR>")
+vim.keymap.set("n", "<leader>bp", ":bprevious<CR>")
+vim.keymap.set("n", "<leader>bd", ":bdelete<CR>")
+
+-- =============================================
+-- Autocommands
+-- =============================================
+
+-- Highlight yanked text
+vim.api.nvim_create_autocmd("TextYankPost", {
+  pattern = "*",
+  callback = function()
+    vim.highlight.on_yank({ timeout = 300 })
+  end
+})
+
+-- Auto-create directories when saving new files
+vim.api.nvim_create_autocmd("BufWritePre", {
+  pattern = "*",
+  callback = function(ctx)
+    local dir = vim.fn.fnamemodify(ctx.file, ":p:h")
+    if vim.fn.isdirectory(dir) == 0 then
+      vim.fn.mkdir(dir, "p")
+    end
+  end
+})
+
+-- =============================================
+-- Final Setup
+-- =============================================
+
+-- Set colorscheme (requires installed colorscheme plugin)
+vim.cmd("colorscheme habamax")  -- Default fallback
+
+-- Print success message
+vim.notify("Neovim configuration loaded successfully!", vim.log.levels.INFO)
